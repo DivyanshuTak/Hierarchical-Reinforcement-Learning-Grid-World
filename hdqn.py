@@ -7,12 +7,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.autograd as autograd
+from torch.utils.tensorboard import SummaryWriter
 
 from utils.replay_memory import ReplayMemory
 from utils import plotting
 
 USE_CUDA = torch.cuda.is_available()
 dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+writer = SummaryWriter("runs/HRL_GW")
 
 class Variable(autograd.Variable):
     def __init__(self, data, *args, **kwargs):
@@ -26,7 +28,7 @@ def one_hot_state(state):
     row,col = state
     dummy_world[row,col] = 1
     state_vector = np.hstack((dummy_world[0,:3],dummy_world[0,5],dummy_world[1,:],dummy_world[2,:],dummy_world[3,0],dummy_world[3,2:5],dummy_world[4,:],dummy_world[5,:2],dummy_world[5,4:]))
-    return np.expand_dims(vector, axis=0)
+    return np.expand_dims(state_vector, axis=0)
 
 def one_hot_goal(goal):
     dummy_world = np.zeros((6,6))
@@ -47,7 +49,6 @@ def index_to_vector(index):
     vector = np.zeros(30)
     vector[index]=1
     return vector
-
 
 
 def hdqn_learning(
@@ -86,7 +87,15 @@ def hdqn_learning(
     meta_timestep = 0
     ctrl_timestep = defaultdict(int)
 
+    # metrics to log 
+    total_rewards_per_intreval = 0
+    log_intreval = 20
+    visits_to_key = 0
+
     for i_thousand_episode in range(n_thousand_episode):
+        print("\n") 
+        print("starting the {}th episode ".format(i_thousand_episode));
+        print("\n")
         for i_episode in range(1000):
             episode_length = 0
             current_state = env.reset()
@@ -106,6 +115,11 @@ def hdqn_learning(
                 total_extrinsic_reward = 0
                 goal_reached = False
                 while not done and not goal_reached:
+
+                    # count the visits to the key 
+                    if (encoded_current_state[0,7]==1):
+                      visits_to_key = visits_to_key + 1
+
                     total_timestep = total_timestep+1
                     episode_length = episode_length+1
                     ctrl_timestep[goal] = ctrl_timestep[goal] + 1
@@ -124,8 +138,7 @@ def hdqn_learning(
 
                     encoded_next_state = one_hot_state(next_state)
                     intrinsic_reward = agent.get_intrinsic_reward(goal_ohc_vector, next_state_ohc_vector)
-                    goal_reached = next_state == goal
-
+                    goal_reached = intrinsic_reward
                     joint_next_state_goal = np.concatenate([encoded_next_state, encoded_goal], axis=1)
                     agent.ctrl_replay_memory.push(joint_state_goal, action, joint_next_state_goal, intrinsic_reward, done)
                     # Update Both meta-controller and controller
@@ -137,5 +150,39 @@ def hdqn_learning(
                     encoded_current_state = encoded_next_state
                 # Goal Finished
                 agent.meta_replay_memory.push(encoded_current_state, goal, encoded_next_state, total_extrinsic_reward, done)
+                
+                # log metrics 
+                total_rewards_per_intreval = total_rewards_per_intreval + total_extrinsic_reward
+            if (i_episode%log_intreval==0):
+              # log total average rewards per episode 
+              episode = i_thousand_episode*1000 + i_episode
+              print("completed {} episodes".format(episode))
+              #writer.add_scalar("episode/average_reward", total_rewards_per_intreval/log_intreval, episode)
+              print("aeverage reward per episode is {}".format(total_rewards_per_intreval/log_intreval))
+              total_rewards_per_intreval=0
+              # log visits to key 
+              #writer.add_scalar("episode/average_visit_to_key", visits_to_key/log_intreval, episode)
+              print("average visits to key per episode is {}".format(visits_to_key/log_intreval))
+              print("\n")
+              print("=================================================================================================")
+              visits_to_key=0
+    # close the logger
+    writer.flush()
+    writer.close()
+
+
+
+                  
+
+
+
+                  
+
+
+
+
+
+
+
 
     return agent, stats, visits

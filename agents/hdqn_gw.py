@@ -28,11 +28,12 @@ class MetaController(nn.Module):
         """
         super(MetaController, self).__init__()
         self.fc1 = nn.Linear(in_features, 256)
-        self.fc2 = nn.Linear(256, out_features)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, out_features)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        return self.fc2(x)
+        return self.fc3(F.relu(self.fc2(x)))
 
 class Controller(nn.Module):
     # input the appended state+goal for controller
@@ -44,11 +45,12 @@ class Controller(nn.Module):
         """
         super(Controller, self).__init__()
         self.fc1 = nn.Linear(in_features, 256)
-        self.fc2 = nn.Linear(256, out_features)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, out_features)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        return self.fc2(x)
+        return self.fc3(F.relu(self.fc2(x)))
 
 """
     OptimizerSpec containing following attributes
@@ -99,7 +101,7 @@ class hDQN():
         self.ctrl_replay_memory = ReplayMemory(replay_memory_size)
 
     def get_intrinsic_reward(self, goal, state):
-        return 1.0 if goal == state else 0.0
+        return 1.0 if (goal == state).all() else 0.0
 
     # This function will output a value which will be index of the goal state (0-29), which needs to be converted into 
     # state representation and ohc vector for further use 
@@ -143,6 +145,8 @@ class hDQN():
         # Compute the target of the current Q values
         target_Q_values = ex_reward_batch + (gamma * next_Q_values)
         # Compute Bellman error (using Huber loss)
+        # reshape target Q values to [128,1] the same as the output of the neural network shape 
+        target_Q_values = target_Q_values.reshape(current_Q_values.shape) 
         loss = F.smooth_l1_loss(current_Q_values, target_Q_values)
 
         # Copy Q to target Q before updating parameters of Q
@@ -176,6 +180,7 @@ class hDQN():
         # Compute the target of the current Q values
         target_Q_values = in_reward_batch + (gamma * next_Q_values)
         # Compute Bellman error (using Huber loss)
+        target_Q_values = target_Q_values.reshape(current_Q_values.shape)
         loss = F.smooth_l1_loss(current_Q_values, target_Q_values)
 
         # Copy Q to target Q before updating parameters of Q
