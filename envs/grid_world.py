@@ -39,6 +39,17 @@ class GridWorld:
         2 ->  Top
         3 ->  Bottom
         """
+
+        # make the left action probablistic with 50%
+        if (action==0):
+            prob =  random.random() 
+            if(prob < 0.5): 
+                # take left as desired 
+                action=0
+            else:
+                # take right becuase of stocasticity in environment 
+                action=1
+
         row,col = self.current_state
         # boundary cases 
         if (action==0) and (col==0):
